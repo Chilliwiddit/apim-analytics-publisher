@@ -23,7 +23,7 @@
         <version>1.2.18</version>
     </parent>
     <modelVersion>4.0.0</modelVersion>
-    <artifactId>org.wso2.am.analytics.publisherandretriever.client</artifactId>
+    <artifactId>org.wso2.am.analytics.publisher.client</artifactId>
     <packaging>bundle</packaging>
     <name>APIM Analytics EventHub Client Implementation</name>
 
