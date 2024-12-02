@@ -182,7 +182,7 @@
                         <Private-Package>
                         </Private-Package>
                         <Import-Package>
-                            com.google.gson.*;version="${gson.import.version.range}",
+<!--                            com.google.gson.*;version="${gson.import.version.range}",-->
                             com.google.gson.annotations.*;version="${google.gson.import.version.range}",
                             com.azure.core.credential.*;version="${azure.core.import.version.range}",
                             com.azure.messaging.eventhubs.*;version="${azure.messaging.import.version.range}",
