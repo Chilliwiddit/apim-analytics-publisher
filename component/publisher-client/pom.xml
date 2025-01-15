@@ -163,11 +163,12 @@
                             org.wso2.am.analytics.publisher.exception.*;version="${project.version}",
                             org.wso2.am.analytics.publisher.auth.*;version="${project.version}",
                             org.wso2.am.analytics.publisher.util.*;version="${project.version}",
+                            org.wso2.am.analytics.retriever.*;version="${project.version}",
                         </Export-Package>
                         <Private-Package>
                         </Private-Package>
                         <Import-Package>
-                            com.google.gson.*;version="${gson.import.version.range}",
+<!--                            com.google.gson.*;version="${gson.import.version.range}",-->
                             com.google.gson.annotations.*;version="${google.gson.import.version.range}",
                             com.azure.core.credential.*;version="${azure.core.import.version.range}",
                             com.azure.messaging.eventhubs.*;version="${azure.messaging.import.version.range}",
