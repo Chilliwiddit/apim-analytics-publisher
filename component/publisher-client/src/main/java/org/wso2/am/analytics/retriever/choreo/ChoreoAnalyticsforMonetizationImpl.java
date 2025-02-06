@@ -11,17 +11,23 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
+import org.wso2.am.analytics.retriever.AnalyticsConstants;
+import org.wso2.am.analytics.retriever.AnalyticsUtil;
 import org.wso2.am.analytics.retriever.choreo.model.GraphQLClient;
 import org.wso2.am.analytics.retriever.choreo.model.GraphqlQueryModel;
 import org.wso2.am.analytics.retriever.choreo.model.graphQLResponseClient;
 import org.wso2.am.analytics.retriever.choreo.model.QueryAPIAccessTokenInterceptor;
+import org.wso2.carbon.apimgt.api.APIAdmin;
 import org.wso2.carbon.apimgt.api.APIManagementException;
 import org.wso2.carbon.apimgt.api.APIProvider;
+import org.wso2.carbon.apimgt.api.MonetizationException;
 import org.wso2.carbon.apimgt.api.model.*;
 import org.wso2.carbon.apimgt.common.analytics.exceptions.AnalyticsException;
+import org.wso2.carbon.apimgt.impl.APIAdminImpl;
 import org.wso2.carbon.apimgt.impl.APIConstants;
 import org.wso2.carbon.apimgt.impl.APIManagerConfiguration;
 import org.wso2.carbon.apimgt.impl.APIManagerFactory;
+import org.wso2.carbon.apimgt.impl.dao.ApiMgtDAO;
 import org.wso2.carbon.apimgt.impl.internal.MonetizationDataHolder;
 import org.wso2.carbon.apimgt.impl.internal.ServiceReferenceHolder;
 import org.wso2.carbon.apimgt.impl.utils.APIUtil;
@@ -46,8 +52,8 @@ public class ChoreoAnalyticsforMonetizationImpl implements AnalyticsforMonetizat
 
     private static final Log log = LogFactory.getLog(ChoreoAnalyticsforMonetizationImpl.class);
     private static APIManagerConfiguration config = null;
-    APIPersistence apiPersistenceInstance;
     boolean useNewQueryAPI = true;
+    AnalyticsUtil analyticsUtil = new AnalyticsUtil();
 
     /**
      * Gets Usage Data from Analytics Provider
@@ -60,12 +66,11 @@ public class ChoreoAnalyticsforMonetizationImpl implements AnalyticsforMonetizat
     public Object getUsageData(MonetizationUsagePublishInfo lastPublishInfo) throws AnalyticsException {
         Long currentTimestamp;
         String apiUuid = null;
-        String apiName = null;
-        String apiVersion = null;
         String tenantDomain = null;
         String applicationName = null;
         String applicationOwner = null;
         Long requestCount = 0L;
+        APIAdmin apiAdmin = new APIAdminImpl();
 
         Date dateobj = new Date();
         SimpleDateFormat simpleDateFormat = new SimpleDateFormat(ChoreoAnalyticsConstants.TIME_FORMAT);
@@ -78,12 +83,11 @@ public class ChoreoAnalyticsforMonetizationImpl implements AnalyticsforMonetizat
                     getAPIManagerConfiguration();
         }
 
-        currentTimestamp = getTimestamp(toDate);
+        currentTimestamp = analyticsUtil.getTimestamp(toDate);
 
         String formattedToDate = toDate.concat(ChoreoAnalyticsConstants.TIMEZONE_FORMAT);
         String fromDate = simpleDateFormat.format(
                 new Date(lastPublishInfo.getLastPublishTime()));
-        //The implementation will be improved to use offset date time to get the time zone based on user input
         String formattedFromDate = fromDate.concat(ChoreoAnalyticsConstants.TIMEZONE_FORMAT);
 
         //get usageData with all the dependency variables
@@ -112,7 +116,7 @@ public class ChoreoAnalyticsforMonetizationImpl implements AnalyticsforMonetizat
         timeFilter.put(ChoreoAnalyticsConstants.FROM, formattedFromDate);
         timeFilter.put(ChoreoAnalyticsConstants.TO, formattedToDate);
 
-        List<JSONArray> tenantsAndApis = getMonetizedAPIIdsAndTenantDomains();
+        List<JSONArray> tenantsAndApis = analyticsUtil.getMonetizedAPIIdsAndTenantDomains();
 
         if (tenantsAndApis.size() == 2) { //it should always be 2
             if (tenantsAndApis.get(1).size() > 0) {
@@ -145,11 +149,24 @@ public class ChoreoAnalyticsforMonetizationImpl implements AnalyticsforMonetizat
                             : ChoreoAnalyticsConstants.GET_USAGE_BY_APPLICATION);
                 }
 
-                if (usageData.isEmpty()){
-                    return null; //will be handled in the publishData method in the Stripe plugin
+                if (usageData.isEmpty()) {
+                    try {
+                        if (log.isDebugEnabled()) {
+                            log.debug("No API Usage retrived for the given period of time");
+                        }
+                        //last publish time will be updated as successfully since there was no usage retrieved.
+                        lastPublishInfo.setLastPublishTime(currentTimestamp);
+                        lastPublishInfo.setState(AnalyticsConstants.COMPLETED);
+                        lastPublishInfo.setStatus(AnalyticsConstants.SUCCESSFULL);
+                        apiAdmin.updateMonetizationUsagePublishInfo(lastPublishInfo);
+                    } catch (APIManagementException ex) {
+                        String msg = "Failed to update last published time ";
+                        throw new AnalyticsException(msg, ex);
+                    }
+                    return null;
                 }
 
-                ArrayList<MonetizationUsageInfo> monetizationInfo = new ArrayList<>();
+                List<MonetizationDTO> monetizationInfo = new ArrayList<>();
 
                 for (Map.Entry<String, ArrayList<LinkedTreeMap<String, String>>> entry : data.entrySet()){
                     //String key = entry.getKey();
@@ -157,125 +174,21 @@ public class ChoreoAnalyticsforMonetizationImpl implements AnalyticsforMonetizat
                     ArrayList<LinkedTreeMap<String, String>> apiUsageDataCollection = entry.getValue();
                     for (LinkedTreeMap<String, String> apiUsageData : apiUsageDataCollection) {
                         apiUuid = apiUsageData.get(API_UUID);
-                        apiName = apiUsageData.get(ChoreoAnalyticsConstants.API_NAME);
-                        apiVersion = apiUsageData.get(ChoreoAnalyticsConstants.API_VERSION);
                         tenantDomain = apiUsageData.get(ChoreoAnalyticsConstants.TENANT_DOMAIN);
                         applicationName = apiUsageData.get(ChoreoAnalyticsConstants.APPLICATION_NAME);
                         applicationOwner = apiUsageData.get(ChoreoAnalyticsConstants.APPLICATION_OWNER);
                         requestCount = Long.parseLong(apiUsageData.get(ChoreoAnalyticsConstants.COUNT));
 
-                        MonetizationUsageInfo usageInfo = new MonetizationUsageInfo(currentTimestamp, apiUuid, apiName, apiVersion, tenantDomain, applicationName, applicationOwner, null, requestCount);
+                        MonetizationDTO usageInfo = new MonetizationDTO(currentTimestamp, apiUuid, tenantDomain,
+                                applicationName, applicationOwner, null, requestCount);
                         monetizationInfo.add(usageInfo);
                     }
                 }
 
-                //prccessing ends here
-                return monetizationInfo;//send the arraylist full of info objects out
+                return monetizationInfo;
             }
         }
         return null;
-
-        //process data
-    }
-
-    /**
-     * The method converts the date into timestamp
-     *
-     * @param date
-     * @return Timestamp in long format
-     */
-    private long getTimestamp(String date) {
-
-        SimpleDateFormat formatter = new SimpleDateFormat(ChoreoAnalyticsConstants.TIME_FORMAT);
-        formatter.setTimeZone(TimeZone.getTimeZone("UTC"));
-        long time = 0;
-        Date parsedDate = null;
-        try {
-            parsedDate = formatter.parse(date);
-            time = parsedDate.getTime();
-        } catch (java.text.ParseException e) {
-            log.error("Error while parsing the date ", e);
-        }
-        return time;
-    }
-
-    /**
-     * Returns the list of monetized API Ids with their tenants
-     *
-     * @return List<JSONArray>
-     * @throws AnalyticsException if the action failed
-     */
-    public List<JSONArray> getMonetizedAPIIdsAndTenantDomains() throws AnalyticsException {
-
-        JSONArray monetizedAPIIdsList = new JSONArray();
-        JSONArray tenantDomainList = new JSONArray();
-        List<JSONArray> tenantsAndApis = new ArrayList<>(2);
-        try {
-            Properties properties = new Properties();
-            properties.put(APIConstants.ALLOW_MULTIPLE_STATUS, APIUtil.isAllowDisplayAPIsWithMultipleStatus());
-            properties.put(APIConstants.ALLOW_MULTIPLE_VERSIONS, APIUtil.isAllowDisplayMultipleVersions());
-            Map<String, String> configMap = new HashMap<>();
-            Map<String, String> configs = APIManagerConfiguration.getPersistenceProperties();
-            if (configs != null && !configs.isEmpty()) {
-                configMap.putAll(configs);
-            }
-            configMap.put(APIConstants.ALLOW_MULTIPLE_STATUS,
-                    Boolean.toString(APIUtil.isAllowDisplayAPIsWithMultipleStatus()));
-
-            apiPersistenceInstance = PersistenceManager.getPersistenceInstance(configMap, properties);
-            List<Tenant> tenants = APIUtil.getAllTenantsWithSuperTenant();
-            for (Tenant tenant : tenants) {
-                tenantDomainList.add(tenant.getDomain());
-                try {
-                    PrivilegedCarbonContext.startTenantFlow();
-                    PrivilegedCarbonContext.getThreadLocalCarbonContext().setTenantDomain(
-                            tenant.getDomain(), true);
-                    String tenantAdminUsername = APIUtil.getAdminUsername();
-                    if (!MultitenantConstants.SUPER_TENANT_DOMAIN_NAME.equals(tenant.getDomain())) {
-                        tenantAdminUsername =
-                                APIUtil.getAdminUsername() + ChoreoAnalyticsConstants.AT + tenant.getDomain();
-                    }
-                    APIProvider apiProviderNew = APIManagerFactory.getInstance().getAPIProvider(tenantAdminUsername);
-                    List<API> allowedAPIs = apiProviderNew.getAllAPIs();
-                    Organization org = new Organization(tenant.getDomain());
-                    for (API api : allowedAPIs) {
-                        PublisherAPI publisherAPI = null;
-                        try {
-                            publisherAPI = apiPersistenceInstance.getPublisherAPI(org, api.getUUID());
-                            if (publisherAPI.isMonetizationEnabled()) {
-                                monetizedAPIIdsList.add(api.getUUID());
-                            }
-                        } catch (APIPersistenceException e) {
-                            throw new AnalyticsException("Failed to retrieve the API of UUID: " + api.getUUID(), e);
-                        }
-                    }
-                    Map<String, Object> productMap = apiProviderNew.searchPaginatedAPIProducts("", tenant.getDomain(), 0,
-                            Integer.MAX_VALUE);
-                    if (productMap != null && productMap.containsKey(PRODUCTS)) {
-                        SortedSet<APIProduct> productSet = (SortedSet<APIProduct>) productMap.get(PRODUCTS);
-                        for (APIProduct apiProduct : productSet) {
-                            PublisherAPIProduct publisherAPIProduct;
-                            try {
-                                publisherAPIProduct = apiPersistenceInstance.getPublisherAPIProduct(org,
-                                        apiProduct.getUuid());
-                                if (publisherAPIProduct.isMonetizationEnabled()) {
-                                    monetizedAPIIdsList.add(apiProduct.getUuid());
-                                }
-                            } catch (APIPersistenceException e) {
-                                throw new RuntimeException(e);
-                            }
-                        }
-                    }
-                } catch (APIManagementException e) {
-                    throw new AnalyticsException("Error while retrieving the Ids of Monetized APIs");
-                }
-            }
-        } catch (UserStoreException e) {
-            throw new AnalyticsException("Error while retrieving the tenants", e);
-        }
-        tenantsAndApis.add(tenantDomainList);
-        tenantsAndApis.add(monetizedAPIIdsList);
-        return tenantsAndApis;
     }
 
     public String getGraphQLQueryBasedOnTheOperationMode(boolean useNewQueryAPI) {
