@@ -117,6 +117,11 @@
             <version>${carbon.apimgt.version}</version>
         </dependency>
         <dependency>
+            <groupId>co.elastic.clients</groupId>
+            <artifactId>elasticsearch-java</artifactId>
+            <version>${elastic.client.version}</version>
+        </dependency>
+        <dependency>
             <groupId>org.wso2.carbon.apimgt</groupId>
             <artifactId>org.wso2.carbon.apimgt.api</artifactId>
             <version>${carbon.apimgt.version}</version>
@@ -134,6 +139,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <maven.bundle.version>3.2.0</maven.bundle.version>
         <carbon.apimgt.version>9.30.89</carbon.apimgt.version>
+        <elastic.client.version>8.13.1</elastic.client.version>
     </properties>
 
     <build>
@@ -183,6 +189,9 @@
                             com.moesif.api.*;resolution:=optional
                         </Import-Package>
                         <DynamicImport-Package>*</DynamicImport-Package>
+                        <Embed-Dependency>
+                            opentelemetry-api;scope=compile|runtime;inline=false,
+                        </Embed-Dependency>
                         <Include-Resource>
                             META-INF=target/classes/META-INF,
                             {maven-resources}
